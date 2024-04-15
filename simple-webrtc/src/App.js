@@ -4,13 +4,38 @@ import { useState } from "react";
 import { Button, Typography, Input } from "antd";
 import "./App.css";
 
+let request_body = {};
+
 function App() {
   const { Title, Paragraph } = Typography;
   const { TextArea } = Input;
   const URL_WEB_SOCKET = "ws://localhost:8090/ws";
   const ws = useRef(null);
 
-  const [localStream, setLocalStream] = useState();
+  let [localStream, setLocalStream] = useState();
+  const [isCallButtonDisabled, setCallButtonDisabled] = useState(false);
+  const [isHangupButtonDisabled, setHangupButtonDisabled] = useState(true);
+  var localPeerConnection = null;
+
+  const extractBody = () => {
+    let query = window.location.search;
+    if (query.indexOf("?") !== -1) {
+      let key = 'channelName';
+      let q = query;
+      let idx = q.indexOf(key+"=");
+      if (idx !== -1) {
+        let value = q.split(key+"=")[1].split("&")[0];
+        request_body[key] = value;
+        key = 'userId';
+      }
+      q = query;
+      idx = q.indexOf(key + "=");
+      if (idx !== -1) {
+        let value = q.split(key + "=")[1].split("&")[0];
+        request_body[key] = value;
+      }
+    }
+  };
 
   const setupDevice = () => {
     console.log("setupDevice invoked");
@@ -19,6 +44,7 @@ function App() {
       (stream) => {
         // render local stream on DOM
         const localPlayer = document.getElementById("localPlayer");
+        console.log(stream);
         localPlayer.srcObject = stream;
         setLocalStream(stream);
       },
@@ -64,7 +90,7 @@ function App() {
         `Using audio device: ${localStream.getAudioTracks()[0].label}`
       );
     }
-    var localPeerConnection = new RTCPeerConnection(servers, pcConstraints);
+    localPeerConnection = new RTCPeerConnection(servers, pcConstraints);
     localPeerConnection.onicecandidate = gotLocalIceCandidateOffer;
     localPeerConnection.onaddstream = gotRemoteStream;
     localPeerConnection.addStream(localStream);
@@ -73,7 +99,12 @@ function App() {
   // async function to handle offer sdp
   const gotLocalDescription = (offer) => {
     console.log("gotLocalDescription invoked:", offer);
-    localPeerConnection.setLocalDescription(offer);
+    if (localPeerConnection)
+    {
+      localPeerConnection.setLocalDescription(offer);
+    }
+    request_body.sdp = offer;
+    sendWsMessage("send_offer", request_body);
   };
   // async function to handle received remote stream
   const gotRemoteStream = (event) => {
@@ -92,15 +123,15 @@ function App() {
     if (!event.candidate) {
       const offer = localPeerConnection.localDescription;
       // send offer sdp to signaling server via websocket
-      sendWsMessage("send_offer", {
-        channelName,
-        userId,
-        sdp: offer,
-      });
+      request_body["sdp"] = offer;
+      console.log(request_body);
+      sendWsMessage("send_offer", request_body);
     }
   };
   const join = ()=>{
-    sendWsMessage('join', {channelName:"Room1", userId:'UserA'});
+    extractBody();
+    console.log(request_body);
+    sendWsMessage("join", request_body);
   };
   useEffect(() => {
     const wsClient = new WebSocket(URL_WEB_SOCKET);
@@ -141,6 +172,7 @@ function App() {
 
     const onAnswer = (offer) => {
     console.log('onAnswer invoked');
+    console.log(localStream);
     setCallButtonDisabled(true);
     setHangupButtonDisabled(false);
 
