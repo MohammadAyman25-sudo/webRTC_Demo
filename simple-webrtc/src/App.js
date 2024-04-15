@@ -12,7 +12,7 @@ function App() {
   const URL_WEB_SOCKET = "ws://localhost:8090/ws";
   const ws = useRef(null);
 
-  let [localStream, setLocalStream] = useState();
+  const [localStream, setLocalStream] = useState();
   const [isCallButtonDisabled, setCallButtonDisabled] = useState(false);
   const [isHangupButtonDisabled, setHangupButtonDisabled] = useState(true);
   var localPeerConnection = null;
