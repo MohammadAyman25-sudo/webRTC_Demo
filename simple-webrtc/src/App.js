@@ -18,15 +18,16 @@ function App() {
   var localPeerConnection = null;
 
   const extractBody = () => {
+    console.log("2.extractBody");
     let query = window.location.search;
     if (query.indexOf("?") !== -1) {
-      let key = 'channelName';
+      let key = "channelName";
       let q = query;
-      let idx = q.indexOf(key+"=");
+      let idx = q.indexOf(key + "=");
       if (idx !== -1) {
-        let value = q.split(key+"=")[1].split("&")[0];
+        let value = q.split(key + "=")[1].split("&")[0];
         request_body[key] = value;
-        key = 'userId';
+        key = "userId";
       }
       q = query;
       idx = q.indexOf(key + "=");
@@ -38,15 +39,16 @@ function App() {
   };
 
   const setupDevice = () => {
+    console.log("4.setupDevice");
     console.log("setupDevice invoked");
     navigator.getUserMedia(
       { audio: true, video: true },
       (stream) => {
         // render local stream on DOM
         const localPlayer = document.getElementById("localPlayer");
-        console.log(stream);
         localPlayer.srcObject = stream;
         setLocalStream(stream);
+        join();
       },
       (error) => {
         console.error("getUserMedia error:", error);
@@ -79,12 +81,13 @@ function App() {
 
   // When user clicks call button, we will create the p2p connection with RTCPeerConnection
   const callOnClick = () => {
+    console.log("5.call");
     console.log("callOnClick invoked");
     if (localStream.getVideoTracks().length > 0) {
       console.log(
         `Using video device: ${localStream.getVideoTracks()[0].label}`
       );
-    } 
+    }
     if (localStream.getAudioTracks().length > 0) {
       console.log(
         `Using audio device: ${localStream.getAudioTracks()[0].label}`
@@ -98,9 +101,9 @@ function App() {
   };
   // async function to handle offer sdp
   const gotLocalDescription = (offer) => {
+    console.log("6.got local description");
     console.log("gotLocalDescription invoked:", offer);
-    if (localPeerConnection)
-    {
+    if (localPeerConnection) {
       localPeerConnection.setLocalDescription(offer);
     }
     request_body.sdp = offer;
@@ -128,7 +131,8 @@ function App() {
       sendWsMessage("send_offer", request_body);
     }
   };
-  const join = ()=>{
+  const join = () => {
+    console.log("1.join");
     extractBody();
     console.log(request_body);
     sendWsMessage("join", request_body);
@@ -139,9 +143,8 @@ function App() {
       console.log("ws opened");
       ws.current = wsClient;
       // setup camera and join channel after ws opened
-      join();
       setupDevice();
-      console.log(localStream);
+      console.log(`Local Stream: ${localStream}`);
     };
     wsClient.onclose = () => console.log("ws closed");
     wsClient.onmessage = (message) => {
@@ -171,16 +174,22 @@ function App() {
     };
 
     const onAnswer = (offer) => {
-    console.log('onAnswer invoked');
-    console.log(localStream);
-    setCallButtonDisabled(true);
-    setHangupButtonDisabled(false);
+      setTimeout(()=>{
+        console.log("8.answer");
+        console.log("onAnswer invoked");
+        console.log(`Local Stream: ${localStream}`);
+        setCallButtonDisabled(true);
+        setHangupButtonDisabled(false);
 
-    if (localStream.getVideoTracks().length > 0) {
-            console.log(`Using video device: ${localStream.getVideoTracks()[0].label}`);
+        if (localStream.getVideoTracks().length > 0) {
+          console.log(
+            `Using video device: ${localStream.getVideoTracks()[0].label}`
+          );
         }
         if (localStream.getAudioTracks().length > 0) {
-            console.log(`Using audio device: ${localStream.getAudioTracks()[0].label}`);
+          console.log(
+            `Using audio device: ${localStream.getAudioTracks()[0].label}`
+          );
         }
         localPeerConnection = new RTCPeerConnection(servers, pcConstraints);
         localPeerConnection.onicecandidate = gotLocalIceCandidateAnswer;
@@ -188,38 +197,48 @@ function App() {
         localPeerConnection.addStream(localStream);
         localPeerConnection.setRemoteDescription(offer);
         localPeerConnection.createAnswer().then(gotAnswerDescription);
+      }, 1000);
     };
-        const gotRemoteStream = (event) => {
-        console.log('gotRemoteStream invoked');
-        const remotePlayer = document.getElementById('peerPlayer');
-        remotePlayer.srcObject = event.stream;
+    const gotRemoteStream = (event) => {
+      console.log("gotRemoteStream invoked");
+      const remotePlayer = document.getElementById("peerPlayer");
+      remotePlayer.srcObject = event.stream;
     };
-        const gotAnswerDescription = (answer) => {
-        console.log('gotAnswerDescription invoked:', answer);
-        localPeerConnection.setLocalDescription(answer);
+    const gotAnswerDescription = (answer) => {
+      console.log("9.got answer description");
+      console.log("gotAnswerDescription invoked:", answer);
+      localPeerConnection.setLocalDescription(answer);
     };
 
     const gotLocalIceCandidateAnswer = (event) => {
-        console.log('gotLocalIceCandidateAnswer invoked', event.candidate, localPeerConnection.localDescription);
-        // gathering candidate finished, send complete sdp
-        if (!event.candidate) {
-            const answer = localPeerConnection.localDescription;
-            sendWsMessage('send_answer', {
-                channelName,
-                userId,
-                sdp: answer,
-            });
-         }
-     };
+      console.log(
+        "gotLocalIceCandidateAnswer invoked",
+        event.candidate,
+        localPeerConnection.localDescription
+      );
+      // gathering candidate finished, send complete sdp
+      if (!event.candidate) {
+        const answer = localPeerConnection.localDescription;
+        request_body.sdp = answer;
+        sendWsMessage("send_answer", request_body);
+      }
+    };
 
     return () => {
-      if(wsClient)
-      {
-          // wsClient.close();
+      if (wsClient) {
+        // wsClient.close();
       }
     };
   }, []);
   const sendWsMessage = (type, body) => {
+    switch (type) {
+      case "join":
+        console.log(`3.send message ${type}`);
+        break;
+      case "send_offer":
+        console.log(`7.send message ${type}`);
+        break;
+    }
     console.log("sendWsMessage invoked", type, body);
     ws.current.send(
       JSON.stringify({
