@@ -38,24 +38,7 @@ function App() {
     }
   };
 
-  const setupDevice = () => {
-    console.log("4.setupDevice");
-    console.log("setupDevice invoked");
-    navigator.getUserMedia(
-      { audio: true, video: true },
-      (stream) => {
-        // render local stream on DOM
-        const localPlayer = document.getElementById("localPlayer");
-        localPlayer.srcObject = stream;
-        setLocalStream(stream);
-        join();
-      },
-      (error) => {
-        console.error("getUserMedia error:", error);
-      }
-    );
-  };
-
+  
   const constraints = {
     video: {
       width: { ideal: 1280 },
@@ -65,19 +48,83 @@ function App() {
     audio: true,
   };
 
-  navigator.mediaDevices
-    .getUserMedia(constraints)
-    .then((stream) => {
-      // Handle the media stream as needed.
-    })
-    .catch((error) => {
-      // Handle the error if constraints cannot be satisfied.
-    });
+  const setupDevice = () => {
+    console.log("4.setupDevice");
+    console.log("setupDevice invoked");
+    navigator.getUserMedia(
+      constraints,
+      (stream) => {
+        // render local stream on DOM
+        const localPlayer = document.getElementById("localPlayer");
+        localPlayer.srcObject = stream;
+        setLocalStream(stream);
+      },
+      (error) => {
+        console.error("getUserMedia error:", error);
+      }
+    );
+  };
+
 
   let servers;
   const pcConstraints = {
     optional: [{ DtlsSrtpKeyAgreement: true }],
   };
+
+  // async function to handle received remote stream
+  const gotRemoteStream = (event) => {
+    console.log("gotRemoteStream invoked");
+    const remotePlayer = document.getElementById("peerPlayer");
+    remotePlayer.srcObject = event.stream;
+  };
+
+  const gotAnswerDescription = (answer) => {
+    console.log("9.got answer description");
+    console.log("gotAnswerDescription invoked:", answer);
+    localPeerConnection.setLocalDescription(answer);
+  };
+  const gotLocalIceCandidateAnswer = (event) => {
+    console.log(
+      "gotLocalIceCandidateAnswer invoked",
+      event.candidate,
+      localPeerConnection.localDescription
+    );
+    // gathering candidate finished, send complete sdp
+    if (!event.candidate) {
+      const answer = localPeerConnection.localDescription;
+      request_body.sdp = answer;
+      sendWsMessage("send_answer", request_body);
+    }
+  };
+  const onAnswer = (offer) => {
+    setTimeout(() => {
+      console.log("8.answer");
+      console.log("onAnswer invoked");
+      console.log(`Local Stream: ${localStream}`);
+      setCallButtonDisabled(true);
+      setHangupButtonDisabled(false);
+
+      if (localStream.getVideoTracks().length > 0) {
+        console.log(
+          `Using video device: ${localStream.getVideoTracks()[0].label}`
+        );
+      }
+      if (localStream.getAudioTracks().length > 0) {
+        console.log(
+          `Using audio device: ${localStream.getAudioTracks()[0].label}`
+        );
+      }
+      localPeerConnection = new RTCPeerConnection(servers, pcConstraints);
+      localPeerConnection.onicecandidate = gotLocalIceCandidateAnswer;
+      localPeerConnection.onaddstream = gotRemoteStream;
+      localPeerConnection.addStream(localStream);
+      console.error("error is here!! line 121");
+      localPeerConnection.setRemoteDescription(offer);
+      let ans = localPeerConnection.createAnswer();
+      console.log(ans)
+      ans.then(gotAnswerDescription);
+    }, 1000);
+  };  
 
   // When user clicks call button, we will create the p2p connection with RTCPeerConnection
   const callOnClick = () => {
@@ -93,7 +140,10 @@ function App() {
         `Using audio device: ${localStream.getAudioTracks()[0].label}`
       );
     }
-    localPeerConnection = new RTCPeerConnection(servers, pcConstraints);
+    if (localPeerConnection === null)
+    {
+        localPeerConnection = new RTCPeerConnection(servers, pcConstraints);
+    }
     localPeerConnection.onicecandidate = gotLocalIceCandidateOffer;
     localPeerConnection.onaddstream = gotRemoteStream;
     localPeerConnection.addStream(localStream);
@@ -109,12 +159,7 @@ function App() {
     request_body.sdp = offer;
     sendWsMessage("send_offer", request_body);
   };
-  // async function to handle received remote stream
-  const gotRemoteStream = (event) => {
-    console.log("gotRemoteStream invoked");
-    const remotePlayer = document.getElementById("peerPlayer");
-    remotePlayer.srcObject = event.stream;
-  };
+
   // async function to handle ice candidates
   const gotLocalIceCandidateOffer = (event) => {
     console.log(
@@ -131,19 +176,28 @@ function App() {
       sendWsMessage("send_offer", request_body);
     }
   };
+  const gotRemoteDescription = (answer)=>{
+    setTimeout(()=>{
+      localPeerConnection.onicecandidate = gotLocalIceCandidateOffer;
+      localPeerConnection.onaddstream = gotRemoteStream;
+      localPeerConnection.addStream(localStream);
+      console.error("error is here!!! line 179");
+      localPeerConnection.setRemoteDescription(answer);
+    }, 1000);
+  };
   const join = () => {
     console.log("1.join");
     extractBody();
     console.log(request_body);
     sendWsMessage("join", request_body);
   };
-  useEffect(() => {
+  const connectWS = () => {
     const wsClient = new WebSocket(URL_WEB_SOCKET);
     wsClient.onopen = () => {
       console.log("ws opened");
       ws.current = wsClient;
       // setup camera and join channel after ws opened
-      setupDevice();
+      join();
       console.log(`Local Stream: ${localStream}`);
     };
     wsClient.onclose = () => console.log("ws closed");
@@ -172,64 +226,18 @@ function App() {
           break;
       }
     };
+  };
 
-    const onAnswer = (offer) => {
-      setTimeout(()=>{
-        console.log("8.answer");
-        console.log("onAnswer invoked");
-        console.log(`Local Stream: ${localStream}`);
-        setCallButtonDisabled(true);
-        setHangupButtonDisabled(false);
-
-        if (localStream.getVideoTracks().length > 0) {
-          console.log(
-            `Using video device: ${localStream.getVideoTracks()[0].label}`
-          );
-        }
-        if (localStream.getAudioTracks().length > 0) {
-          console.log(
-            `Using audio device: ${localStream.getAudioTracks()[0].label}`
-          );
-        }
-        localPeerConnection = new RTCPeerConnection(servers, pcConstraints);
-        localPeerConnection.onicecandidate = gotLocalIceCandidateAnswer;
-        localPeerConnection.onaddstream = gotRemoteStream;
-        localPeerConnection.addStream(localStream);
-        localPeerConnection.setRemoteDescription(offer);
-        localPeerConnection.createAnswer().then(gotAnswerDescription);
-      }, 1000);
-    };
-    const gotRemoteStream = (event) => {
-      console.log("gotRemoteStream invoked");
-      const remotePlayer = document.getElementById("peerPlayer");
-      remotePlayer.srcObject = event.stream;
-    };
-    const gotAnswerDescription = (answer) => {
-      console.log("9.got answer description");
-      console.log("gotAnswerDescription invoked:", answer);
-      localPeerConnection.setLocalDescription(answer);
-    };
-
-    const gotLocalIceCandidateAnswer = (event) => {
-      console.log(
-        "gotLocalIceCandidateAnswer invoked",
-        event.candidate,
-        localPeerConnection.localDescription
-      );
-      // gathering candidate finished, send complete sdp
-      if (!event.candidate) {
-        const answer = localPeerConnection.localDescription;
-        request_body.sdp = answer;
-        sendWsMessage("send_answer", request_body);
-      }
-    };
-
-    return () => {
-      if (wsClient) {
-        // wsClient.close();
-      }
-    };
+  useEffect(() => {
+    setupDevice();
   }, []);
+
+  useEffect(() => {
+    if (localStream) {
+      connectWS();
+    }
+  }, [localStream]);
+
   const sendWsMessage = (type, body) => {
     switch (type) {
       case "join":
@@ -306,10 +314,11 @@ function App() {
           {renderTextarea()}
         </div>
         <div className="playerContainer" id="playerContainer">
-          <video id="peerPlayer" autoPlay style={{ width: 640, height: 480 }} />
+          <video muted id="peerPlayer" autoPlay style={{ width: 640, height: 480 }} />
           <video
             id="localPlayer"
             autoPlay
+            muted
             style={{ width: 640, height: 480 }}
           />
         </div>
